@@ -1,7 +1,6 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import { retrieveContext } from "./vectorStore";
+import { SimpleVectorStore, retrieveContext } from "./vectorStore";
 
 const llm = new ChatOpenAI({
   model: "gpt-4o",
@@ -10,7 +9,7 @@ const llm = new ChatOpenAI({
 });
 
 export async function generateQuestion(
-  vectorStore: MemoryVectorStore,
+  vectorStore: SimpleVectorStore,
   questionNumber: number,
   previousQA: string,
   jdAnalysis: any
@@ -58,7 +57,7 @@ Ask ONLY the question. No preamble.
 export async function scoreAnswer(
   question: string,
   answer: string,
-  vectorStore: MemoryVectorStore,
+  vectorStore: SimpleVectorStore,
   jdAnalysis: any
 ): Promise<{ score: number; feedback: string }> {
   const context = await retrieveContext(vectorStore, question, 3);
