@@ -1,10 +1,11 @@
-import { ChatOpenAI } from "@langchain/openai";
+// CHANGED: ChatOpenAI → ChatGroq, modelName → llama-3.3-70b-versatile
+import { ChatGroq } from "@langchain/groq";
 import { PromptTemplate } from "@langchain/core/prompts";
 
-const llm = new ChatOpenAI({
-  model: "gpt-4o",
+const llm = new ChatGroq({
+  model: "llama-3.3-70b-versatile",
   temperature: 0.2,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.GROQ_API_KEY,
 });
 
 export async function analyzeJD(jdText: string, resumeText: string) {
@@ -33,7 +34,12 @@ Return ONLY the JSON. No extra text.
 
   const chain = prompt.pipe(llm);
   const result = await chain.invoke({ jd: jdText, resume: resumeText });
-  const content = result.content as string;
-  const clean = content.replace(/```json|```/g, "").trim();
-  return JSON.parse(clean);
+
+  try {
+    const content = result.content as string;
+    const clean = content.replace(/```json|```/g, "").trim();
+    return JSON.parse(clean);
+  } catch {
+    throw new Error("Failed to parse JD analysis");
+  }
 }

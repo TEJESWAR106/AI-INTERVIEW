@@ -1,11 +1,17 @@
-import { OpenAIEmbeddings } from "@langchain/openai";
+import { HuggingFaceInferenceEmbeddings } from "@langchain/community/embeddings/hf";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
-interface DocChunk {
-  pageContent: string;
-  metadata: Record<string, string>;
-  embedding: number[];
+const embeddings = new HuggingFaceInferenceEmbeddings({
+  apiKey: process.env.HUGGINGFACE_API_KEY,
+  model: "sentence-transformers/all-MiniLM-L6-v2",
+});
+
+interface VectorEntry {
+  text: string;
+  vector: number[];
 }
+
+export type SimpleVectorStore = VectorEntry[];
 
 function cosineSimilarity(a: number[], b: number[]): number {
   const dot = a.reduce((sum, val, i) => sum + val * b[i], 0);
@@ -14,60 +20,40 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dot / (magA * magB);
 }
 
-export class SimpleVectorStore {
-  private chunks: DocChunk[] = [];
-  private embeddings: OpenAIEmbeddings;
-
-  constructor(embeddings: OpenAIEmbeddings) {
-    this.embeddings = embeddings;
-  }
-
-  async addDocuments(docs: { pageContent: string; metadata: Record<string, string> }[]) {
-    const texts = docs.map((d) => d.pageContent);
-    const vectors = await this.embeddings.embedDocuments(texts);
-    for (let i = 0; i < docs.length; i++) {
-      this.chunks.push({ ...docs[i], embedding: vectors[i] });
-    }
-  }
-
-  async similaritySearch(query: string, k = 4) {
-    const queryVec = await this.embeddings.embedQuery(query);
-    return this.chunks
-      .map((chunk) => ({ chunk, score: cosineSimilarity(queryVec, chunk.embedding) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, k)
-      .map((r) => r.chunk);
-  }
-}
-
-export async function createVectorStore(resumeText: string, jdText: string) {
-  const embeddings = new OpenAIEmbeddings({
-    openAIApiKey: process.env.OPENAI_API_KEY,
-    modelName: "text-embedding-3-small",
-  });
-
+export async function createVectorStore(
+  resumeText: string,
+  jdText: string
+): Promise<SimpleVectorStore> {
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 500,
     chunkOverlap: 50,
   });
 
-  const resumeChunks = await splitter.createDocuments(
-    [resumeText], [{ source: "resume" }]
-  );
-  const jdChunks = await splitter.createDocuments(
-    [jdText], [{ source: "job_description" }]
-  );
+  const resumeChunks = await splitter.splitText(resumeText);
+  const jdChunks = await splitter.splitText(jdText);
+  const allChunks = [...resumeChunks, ...jdChunks];
 
-  const store = new SimpleVectorStore(embeddings);
-  await store.addDocuments([...resumeChunks, ...jdChunks]);
-  return store;
+  const vectors = await embeddings.embedDocuments(allChunks);
+
+  return allChunks.map((text, i) => ({ text, vector: vectors[i] }));
 }
 
 export async function retrieveContext(
-  vectorStore: SimpleVectorStore,
+  store: SimpleVectorStore,
   query: string,
-  k = 4
+  k: number = 4
 ): Promise<string> {
-  const results = await vectorStore.similaritySearch(query, k);
-  return results.map((doc) => doc.pageContent).join("\n\n");
+  const queryVector = await embeddings.embedQuery(query);
+
+  const scored = store.map((entry) => ({
+    text: entry.text,
+    score: cosineSimilarity(queryVector, entry.vector),
+  }));
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored
+    .slice(0, k)
+    .map((e) => e.text)
+    .join("\n\n");
 }

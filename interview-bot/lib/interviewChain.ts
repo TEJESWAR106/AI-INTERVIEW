@@ -1,11 +1,13 @@
-import { ChatOpenAI } from "@langchain/openai";
+// CHANGED: ChatOpenAI → ChatGroq, modelName → llama-3.3-70b-versatile
+import { ChatGroq } from "@langchain/groq";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { SimpleVectorStore, retrieveContext } from "./vectorStore";
+import { SimpleVectorStore } from "./vectorStore";
+import { retrieveContext } from "./vectorStore";
 
-const llm = new ChatOpenAI({
-  model: "gpt-4o",
+const llm = new ChatGroq({
+  model: "llama-3.3-70b-versatile",
   temperature: 0.7,
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.GROQ_API_KEY,
 });
 
 export async function generateQuestion(
@@ -33,10 +35,10 @@ PREVIOUS Q&A:
 {previousQA}
 
 Rules:
-- Questions 1-3: warm-up / background questions
-- Questions 4-6: technical / skill-based questions  
-- Questions 7-8: behavioral / situational questions
-- Do not repeat topics already covered
+- If question 1-3: ask warm-up / background questions
+- If question 4-6: ask technical / skill-based questions
+- If question 7-8: ask behavioral / situational questions
+- Vary question types, do not repeat topics
 - Keep question concise and professional
 
 Ask ONLY the question. No preamble.
@@ -67,7 +69,7 @@ You are evaluating a candidate's interview answer.
 
 QUESTION: {question}
 CANDIDATE'S ANSWER: {answer}
-RELEVANT CONTEXT: {context}
+RELEVANT CONTEXT (from resume/JD): {context}
 REQUIRED SKILLS: {skills}
 
 Score the answer from 1-10 and provide specific feedback.
@@ -75,7 +77,7 @@ Score the answer from 1-10 and provide specific feedback.
 Return JSON only:
 {{
   "score": 7,
-  "feedback": "Your answer demonstrated X but lacked Y."
+  "feedback": "Your answer demonstrated X but lacked Y. Consider Z."
 }}
 `);
 
@@ -92,6 +94,6 @@ Return JSON only:
     const clean = content.replace(/```json|```/g, "").trim();
     return JSON.parse(clean);
   } catch {
-    return { score: 5, feedback: "Answer received." };
+    return { score: 5, feedback: "Answer received. Keep practicing!" };
   }
 }
