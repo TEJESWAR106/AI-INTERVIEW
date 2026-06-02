@@ -1,10 +1,24 @@
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from "next/server";
-import { extractTextFromPDF, cleanText } from "@/lib/pdfParser";
 import { analyzeJD } from "@/lib/jdAnalyzer";
 import { createVectorStore } from "@/lib/vectorStore";
+import { cleanText } from "@/lib/pdfParser";
 
-// In-memory store (use Redis in production)
 export const sessionStore: Record<string, any> = {};
+
+async function extractPDFText(buffer: Buffer): Promise<string> {
+  try {
+    // Dynamic import avoids module resolution issues on Vercel
+    const pdfParse = require("pdf-parse");
+    const data = await pdfParse(buffer);
+    return data.text.trim();
+  } catch {
+    // Fallback: return buffer as plain text if PDF parsing fails
+    return buffer.toString("utf-8").replace(/[^\x20-\x7E\n]/g, " ").trim();
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,23 +27,28 @@ export async function POST(req: NextRequest) {
     const jdFile = formData.get("jd") as File;
 
     if (!resumeFile || !jdFile) {
-      return NextResponse.json({ error: "Both files required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Both files required" },
+        { status: 400 }
+      );
     }
 
-    // Extract text from PDFs
     const resumeBuffer = Buffer.from(await resumeFile.arrayBuffer());
     const jdBuffer = Buffer.from(await jdFile.arrayBuffer());
 
-    const resumeText = cleanText(await extractTextFromPDF(resumeBuffer));
-    const jdText = cleanText(await extractTextFromPDF(jdBuffer));
+    const resumeText = cleanText(await extractPDFText(resumeBuffer));
+    const jdText = cleanText(await extractPDFText(jdBuffer));
 
-    // Analyze JD vs Resume
+    if (!resumeText || !jdText) {
+      return NextResponse.json(
+        { error: "Could not extract text from PDFs" },
+        { status: 400 }
+      );
+    }
+
     const jdAnalysis = await analyzeJD(jdText, resumeText);
-
-    // Build vector store
     const vectorStore = await createVectorStore(resumeText, jdText);
 
-    // Create session
     const sessionId = `session_${Date.now()}`;
     sessionStore[sessionId] = {
       resumeText,
@@ -40,13 +59,12 @@ export async function POST(req: NextRequest) {
       questionNumber: 0,
     };
 
-    return NextResponse.json({
-      sessionId,
-      jdAnalysis,
-      message: "Files processed successfully",
-    });
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Processing failed" }, { status: 500 });
+    return NextResponse.json({ sessionId, jdAnalysis });
+  } catch (error: any) {
+    console.error("Upload error:", error);
+    return NextResponse.json(
+      { error: error.message || "Processing failed" },
+      { status: 500 }
+    );
   }
 }
