@@ -1,7 +1,6 @@
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// ... rest of your existing chat route code unchanged
 import { NextRequest, NextResponse } from "next/server";
 import { sessionStore } from "../upload/route";
 import { generateQuestion, scoreAnswer } from "@/lib/interviewChain";
